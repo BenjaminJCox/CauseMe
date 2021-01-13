@@ -1,5 +1,7 @@
 using DrWatson
 using Optim
+using Distributions
+using Random
 
 include(srcdir("workers.jl"))
 
@@ -70,9 +72,3 @@ end
 # A_graphem4 = perf_em()
 
 A_graphem_dr = em_dr()
-
-qco = Q_func(Y, rand(2,2), H, m0, P, Q, R, l1_penalty)
-θ = 1.0
-
-pf1 = isotropic_proxf1(A, θ, T, Q, qco[4])
-nit_pf1 = proxf1(A, θ, T, Q, qco[4])
