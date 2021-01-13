@@ -17,3 +17,7 @@ To (locally) reproduce this project, do the following:
 
 This will install all necessary packages for you to be able to run the scripts and
 everything should work out of the box.
+
+# Project Description
+
+In this project we utilise the [GraphEM](https://arxiv.org/abs/2001.03195) algorithm and use it to explore relations in the [CauseMe](https://causeme.uv.es/) data. 
