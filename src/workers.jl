@@ -1,6 +1,8 @@
 using LinearAlgebra
 using DrWatson
 using Kronecker
+using Distributions
+using Random
 
 function perform_kalman(observations, A, H, m0, P0, Q, R)
     m = copy(m0)
@@ -9,20 +11,27 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
     S = H * P * H' + R
     K = P * H' \ S
     T = size(observations, 2)
+    _xd = length(m0)
     filtered_state = zeros(length(m0), T)
     filtered_cov = zeros(length(m0), length(m0), T)
+    l_like_est = 0.0
+    offness = 0.0
     for t = 1:T
         m = A * m
-        P = A * P * A' + Q
+        P = A * P * transpose(A) + Q
         v = observations[:, t] - H * m
-        S = H * P * H' + R
-        K = (P * H') / S
+        S = H * P * transpose(H) + R
+        offness += norm(S - Matrix(Hermitian(S)))
+        S = Matrix(Hermitian(S))
+        K = (P * transpose(H)) * inv(S)
+        l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
+        # unstable, need to implement in sqrt form
         m = m + K * v
-        P = P - K * S * K'
-        filtered_state[:, t] .= m
-        filtered_cov[:, :, t] .= P
+        P = (I(_xd) - K * H) * P * (I(_xd) - K * H)' + K*R*K'
+        filtered_state[:, t] = copy(m)
+        filtered_cov[:, :, t] = copy(P)
     end
-    return (filtered_state, filtered_cov)
+    return (filtered_state, filtered_cov, l_like_est, offness)
 end
 
 function perform_rts(kalman_out, A, H, Q, R)
@@ -139,15 +148,42 @@ function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ; maxiters = 1
     return A
 end
 
-function generate_lagged_obs(Y::Vector{Float64}, lag::Integer)
+function generate_lagged_obs(Y::Vector{Float64}, lag::Integer; lagmin::Integer = 0)
     num_obs = length(Y)
     num_gen_obs = num_obs - lag
-    generated_obs = Matrix{Float64}(undef, lag+1, num_gen_obs)
+    generated_obs = Matrix{Float64}(undef, lag+1-lagmin, num_gen_obs)
     for i in 1:num_gen_obs
-        generated_obs[:, i] = Y[(i):(i+lag)]
+        generated_obs[:, i] = Y[(i):(i+lag-lagmin)]
     end
     return generated_obs
 end
+
+function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, observations; steps::Integer = 1000, A0 = 1. * Matrix(I(size(P, 1))))
+    # flat prior, eliminates p(A) term
+    # symmetric walk, eliminates q term
+    # propose based on LR only
+    A = copy(A0)
+    A′ = copy(A)
+    M = zeros(size(A))
+    pert_dist = MatrixNormal(M, U, V)
+    l_pya = perform_kalman(observations, A, H, m0, P, Q, R)[3]
+    l_pyap = copy(l_pya)
+    l_accrat = 0.
+    for n in 1:steps
+        A′ = A .+ rand(pert_dist)
+        l_pyap = perform_kalman(observations, A′, H, m0, P, Q, R)[3]
+        l_accrat = l_pyap - l_pya
+        l_rand = log(rand())
+        if (l_rand < l_accrat)
+            A = copy(A′)
+            l_pya = copy(l_pyap)
+        end
+    end
+    return A
+end
+
+
+
 
 
 
