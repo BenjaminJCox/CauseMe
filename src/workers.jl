@@ -57,8 +57,8 @@ end
 function Q_func(observations, A′, H, m0, P0, Q, R, _lp)
     kal = perform_kalman(observations, A′, H, m0, P0, Q, R)
     rts = perform_rts(kal, A′, H, Q, R)
-    Σ = zeros(size(P))
-    Φ = zeros(size(P))
+    Σ = zeros(size(P0))
+    Φ = zeros(size(P0))
     C = zeros(size(m0 * m0'))
     K = size(observations, 2)
 
@@ -114,7 +114,7 @@ function _proxf2(A, θ)
 end
 
 
-function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ)
+function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ; maxiters = 100)
     difference = 2 * ϵ
     Z = copy(Z0)
     A = proxf2(Z, θ)
@@ -122,7 +122,8 @@ function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ)
     V = proxf1(2A - Z, θ, K, Q, val_dict)
     Z .= Z + θ .* (V - A)
     # println(Z + θ .* (V - A))
-    while difference >= ϵ
+    iters = 0
+    while (difference >= ϵ) && (iters < maxiters)
         # @info("DRSTEP")
         A .= proxf2(Z, θ)
         # @info(A)
@@ -133,8 +134,19 @@ function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ)
         # @info(abs(f1(A) + f2(A) - f1(A_old) - f2(A_old)))
         difference = abs(f1(A) + f2(A) - f1(A_old) - f2(A_old))
         A_old .= A
+        iters += 1
     end
     return A
+end
+
+function generate_lagged_obs(Y::Vector{Float64}, lag::Integer)
+    num_obs = length(Y)
+    num_gen_obs = num_obs - lag
+    generated_obs = Matrix{Float64}(undef, lag+1, num_gen_obs)
+    for i in 1:num_gen_obs
+        generated_obs[:, i] = Y[(i):(i+lag)]
+    end
+    return generated_obs
 end
 
 

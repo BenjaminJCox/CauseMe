@@ -2,6 +2,10 @@ using DrWatson
 using Optim
 using Distributions
 using Random
+using DataFrames
+using Plots
+
+plotlyjs()
 
 include(srcdir("workers.jl"))
 
@@ -55,10 +59,10 @@ end
 
 
 dr_steps = 50
-function em_dr()
-    A_gem = rand(2, 2)
+function em_dr(dimA, steps, Y, H, m0, P, Q, R)
+    A_gem = rand(dimA, dimA)
     θ = 1.0
-    for s in 1:dr_steps
+    for s in 1:steps
         Qf = Q_func(Y, A_gem, H, m0, P, Q, R, l1_penalty)
         A_gem = DR_opt(Qf[2], Qf[3], _proxf1, _proxf2, θ, T, Q, Qf[4], A_gem, 1e-3)
     end
@@ -71,4 +75,36 @@ end
 # A_graphem3 = perf_em()
 # A_graphem4 = perf_em()
 
-A_graphem_dr = em_dr()
+A_graphem_dr = em_dr(2, dr_steps, Y, H, m0, P, Q, R)
+
+data_file = datadir("exp_pro/TestCLIM_N-5_T-100.csv")
+colsww = [1]
+data_csv = CSV.File(data_file; select=colsww, header = false)
+raw_obs = vec(Matrix(DataFrame(data_csv)))
+
+l_data = length(raw_obs)
+
+lag = 3
+implied_obs = generate_lagged_obs(raw_obs, lag)
+
+mpt = maximum(raw_obs) - minimum(raw_obs)
+
+H_mat = 1. .* Matrix(I(lag+1))
+
+var = mpt / 10.
+P_mat = var * Matrix(I(lag+1))
+Q_mat = var * Matrix(I(lag+1))
+R_mat = 0.01 * var * Matrix(I(lag+1))
+
+m0_cd = implied_obs[:, 1]
+
+genem = em_dr(lag+1, 100, implied_obs, H_mat, m0_cd, P_mat, Q_mat, R_mat)
+
+genfil = perform_kalman(implied_obs, genem, H_mat, m0_cd, P_mat, Q_mat, R_mat)
+
+varoint = genfil[1][lag+1,:]
+
+gr()
+
+plot((lag+1):l_data, varoint, label = "Generative Filter")
+plot!(raw_obs, label = "Data")
