@@ -21,7 +21,7 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
         P = A * P * transpose(A) + Q
         v = observations[:, t] - H * m
         S = H * P * transpose(H) + R
-        offness += norm(S - Matrix(Hermitian(S)))
+        offness += norm(S - Matrix(Hermitian(S)), 1)
         S = Matrix(Hermitian(S))
         K = (P * transpose(H)) * inv(S)
         l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
@@ -162,6 +162,7 @@ function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, o
     # flat prior, eliminates p(A) term
     # symmetric walk, eliminates q term
     # propose based on LR only
+    out_A = 0.0 .* A0
     A = copy(A0)
     A′ = copy(A)
     M = zeros(size(A))
@@ -178,8 +179,9 @@ function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, o
             A = copy(A′)
             l_pya = copy(l_pyap)
         end
+        out_A .+= (A ./ steps)
     end
-    return A
+    return out_A
 end
 
 

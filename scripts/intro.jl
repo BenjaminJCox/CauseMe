@@ -3,3 +3,4 @@ using DrWatson
 using Optim
 using LinearAlgebra
 using TOML
+using Latexify
