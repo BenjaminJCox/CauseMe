@@ -219,3 +219,30 @@ end
 # plot(X[1, :], legend = false)
 # # plot!(filtered[1][1, :], legend = false)
 # plot!(smoothed[1][1, :], legend = false)
+function perform_slarac(X::Matrix, L::Integer, B::Integer, bootstrap_sizes::Vector)
+    @assert length(bootstrap_sizes) == B
+    @assert L > 0
+    @assert B > 0
+    T = size(X, 1)
+    d = size(X, 2)
+    A_full = zeros(d, d*L)
+    A = Matrix{Float64}(undef, d, d)
+    Z = hcat(ones(T), X)
+    β = zeros(d * L + 1, d)
+    for b in 1:B
+        β[:,:] .= 0.0
+        lags = rand(1:L)
+        t_bootstrap = (lags+1):T
+        # t_bootstrap = sample((lags+1):T, bootstrap_sizes[b], replace = true)
+        Y_b = X[t_bootstrap,:]
+        ico = min(bootstrap_sizes[b] - lags + 1, T-1)
+        # ico = size(Y_b, 1)-lags
+        X_past_b = X_past_constructor(X, t_bootstrap, lags)[:,1:(ico)]
+        # @info(ico)
+        β[1:ico,:] .= X_past_b \ Y_b
+        # @info(β)
+        A_full .+= abs.(β[2:end,:]')
+    end
+    A .= slarac_aggregator!(A, A_full ./ B, L, d)
+    return A'
+end
