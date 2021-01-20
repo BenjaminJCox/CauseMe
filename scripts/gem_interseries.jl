@@ -51,7 +51,7 @@ n_series = size(full_set, 1)
 n_data = size(full_set, 2)
 plot_obs = full_set[1,:]
 ## -- GraphEM algorithm
-sta_var = 0.1^2
+sta_var = 0.10^2
 P_full = sta_var .* Matrix(I(n_series))
 Q_full = sta_var .* Matrix(I(n_series))
 
@@ -80,19 +80,19 @@ plot(plot_series_gem, label = "GEM Causal Filter", legend = :outerbottom, size =
 plot!(plot_obs, label = "Noisy Observations")
 savefig("initial_gem_kf.pdf")
 plotlyjs()
-## -- MMH with GEM as starting point
-
-U_prop = ones(n_series, n_series) .+ I(n_series)
-V_prop = copy(U_prop)
-var_mul = 0.025
-U_prop .*= var_mul
-V_prop .*= var_mul
-
-A0 = genem_full
-A_mmh = kalmanesq_MMH_A(U_prop, V_prop, P_full, Q_full, R_full, H_full, m0_full, full_set; A0 = A0, steps = 5_000)
-genfil_mmh = perform_kalman(full_set, A_mmh, H_full, m0_full, P_full, Q_full, R_full)
-plot_series = genfil_mmh[1][1,:]
-plot(plot_series, label = "GEMMMH Causal Filter")
-plot!(plot_obs, label = "Noisy Observations")
+# ## -- MMH with GEM as starting point
+#
+# U_prop = ones(n_series, n_series) .+ I(n_series)
+# V_prop = copy(U_prop)
+# var_mul = 0.025
+# U_prop .*= var_mul
+# V_prop .*= var_mul
+#
+# A0 = genem_full
+# A_mmh = kalmanesq_MMH_A(U_prop, V_prop, P_full, Q_full, R_full, H_full, m0_full, full_set; A0 = A0, steps = 5_000)
+# genfil_mmh = perform_kalman(full_set, A_mmh, H_full, m0_full, P_full, Q_full, R_full)
+# plot_series = genfil_mmh[1][1,:]
+# plot(plot_series, label = "GEMMMH Causal Filter")
+# plot!(plot_obs, label = "Noisy Observations")
 
 ## --

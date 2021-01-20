@@ -78,14 +78,14 @@ function Q_func(observations, A′, H, m0, P0, Q, R, _lp)
     for k = 2:K
         Σ += rts_covs[:, :, k] + (rts_means[:, k] * rts_means[:, k]')
         Φ += rts_covs[:, :, k-1] + (rts_means[:, k-1] * rts_means[:, k-1]')
-        C += rts_covs[:, :, k] * rts_G[:, :, k-1]' + rts_means[:, k] * rts_means[:, k-1]'
+        C += (rts_covs[:, :, k] * rts_G[:, :, k-1]') + (rts_means[:, k] * rts_means[:, k-1]')
     end
     Σ ./= K
     Φ ./= K
     C ./= K
     _f1(A) = (K / 2.0) * tr(inv(Q) * (Σ - C * A' - A * C' + A * Φ * A'))
     _f2(A) = _lp(A)
-    Qf(A) = _f1(A) .+ _f2(A)
+    Qf(A) = _f1(A) + _f2(A)
     val_dict = @dict Σ Φ C
     return (Qf, _f1, _f2, val_dict)
 end
@@ -110,20 +110,20 @@ function _proxf1(A, θ, K, Q, val_dict)
 
     id = 1.0 .* Matrix(I(size(Q, 1)))
 
-    _t1 = inv(id ⊗ (K .* Q_inv) + (θ .* Φ_inv) ⊗ id)
+    _t1 = id ⊗ (K * Q_inv) + (θ * Φ_inv) ⊗ id
     _t2 = vec(K * Q_inv * C * Φ_inv)
-    rv = _t1 * _t2
+    rv = _t1 \ _t2
     rvl = isqrt(length(rv))
     return reshape(rv, (rvl, rvl))
 end
 
 function _proxf2(A, θ)
-    maximator = max.(abs.(A) .- θ, 0)
+    maximator = max.(abs.(A) .- θ, 0.0)
     return sign.(A) .* maximator
 end
 
 
-function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ; maxiters = 100)
+function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ, γ; maxiters = 100)
     difference = 2 * ϵ
     Z = copy(Z0)
     A = proxf2(Z, θ)
@@ -133,15 +133,11 @@ function DR_opt(f1, f2, proxf1, proxf2, θ, K, Q, val_dict, Z0, ϵ; maxiters = 1
     # println(Z + θ .* (V - A))
     iters = 0
     while (difference >= ϵ) && (iters < maxiters)
-        # @info("DRSTEP")
-        A .= proxf2(Z, θ)
-        # @info(A)
+        A .= proxf2(Z, γ)
         V .= proxf1(2.0 .* A - Z, θ, K, Q, val_dict)
-        # @info(V)
+        # @info(V, isotropic_proxf1(2.0 .* A - Z, θ, K, Q, val_dict))
         Z .= Z + θ .* (V - A)
-        # @info(Z)
-        # @info(abs(f1(A) + f2(A) - f1(A_old) - f2(A_old)))
-        difference = abs(f1(A) + f2(A) - f1(A_old) - f2(A_old))
+        difference = abs.(f1(A) + f2(A) - f1(A_old) - f2(A_old))
         A_old .= A
         iters += 1
     end
@@ -219,30 +215,64 @@ end
 # plot(X[1, :], legend = false)
 # # plot!(filtered[1][1, :], legend = false)
 # plot!(smoothed[1][1, :], legend = false)
-function perform_slarac(X::Matrix, L::Integer, B::Integer, bootstrap_sizes::Vector)
-    @assert length(bootstrap_sizes) == B
+function Z_constructor(X, L)
+    d = size(X, 2)
+    T = size(X, 1)
+    Z_rows = T - L
+    Z_cols = 1 + (d * L)
+    Z = Matrix{Float64}(undef, Z_rows, Z_cols)
+    Z[:,1] .= 1.0
+    for k in 0:(L-1)
+        start_idx = k*d+1
+        fin_idx = (k+1)*d+1
+        x_rsind = L-k
+        x_reind = x_rsind + T - L - 1
+        xoint = X[x_rsind:x_reind,:]
+        Z[:,(1+start_idx):fin_idx] .= xoint
+    end
+    return Z
+end
+
+function slarac_aggregator!(A, A_full, L, d)
+    ij = 1:d
+    for j in ij, i in ij
+        A[i,j] = maximum(A_full[i, j .+ (0:(L-1)).*d])
+    end
+    return A
+end
+
+function perform_slarac(X::Matrix, L::Integer, B::Integer)
     @assert L > 0
     @assert B > 0
     T = size(X, 1)
     d = size(X, 2)
     A_full = zeros(d, d*L)
     A = Matrix{Float64}(undef, d, d)
-    Z = hcat(ones(T), X)
     β = zeros(d * L + 1, d)
+    INV_GR = 2.0 / (1.0 + sqrt(5.0))
+    subsample_sizes = [1.0, 2.0, 3.0, 6.0]
+    subsample_sizes .= T .* INV_GR .^ inv.(subsample_sizes)
+    subsample_sizes_absol = round.(Int64, sample(subsample_sizes, B, replace = true))
+    Y_t = X[(L+1):end,:]
+    Z_t = Z_constructor(X, L)
+    # @info(Z_t)
     for b in 1:B
         β[:,:] .= 0.0
         lags = rand(1:L)
-        t_bootstrap = (lags+1):T
-        # t_bootstrap = sample((lags+1):T, bootstrap_sizes[b], replace = true)
-        Y_b = X[t_bootstrap,:]
-        ico = min(bootstrap_sizes[b] - lags + 1, T-1)
-        # ico = size(Y_b, 1)-lags
-        X_past_b = X_past_constructor(X, t_bootstrap, lags)[:,1:(ico)]
-        # @info(ico)
-        β[1:ico,:] .= X_past_b \ Y_b
-        # @info(β)
+        # lags = L
+        eff_lags = lags * d + 1
+        ps_boot = size(Y_t, 1)
+        t_bootstrap = sample(1:ps_boot, subsample_sizes_absol[b], replace = true)
+        # t_bootstrap = 1:ps_boot
+        # t_bootstrap = sample((lags+1):T, 100, replace = true)
+        ico = (rand(1:lags) * d + 1)
+        Y_b = Y_t[t_bootstrap,:]
+        Z_b = Z_t[t_bootstrap,:]
+        beta = svd(Z_b) \ Y_b
+        β[1:size(beta,1),:] .= beta
+        # @info(size(beta))
         A_full .+= abs.(β[2:end,:]')
     end
     A .= slarac_aggregator!(A, A_full ./ B, L, d)
-    return A'
+    return (A', A_full)
 end

@@ -40,35 +40,6 @@ function slarac_aggregator!(A, A_full, L, d)
     return A
 end
 
-
-
-# X = [-1.39294  -0.629396; 1.14853 0.0176775; -1.5745 -0.082081; -1.01497  -0.288307]
-
-
-function perform_slarac_old(X::Matrix, L::Integer, B::Integer, bootstrap_sizes::Vector)
-    @assert length(bootstrap_sizes) == B
-    @assert L > 0
-    @assert B > 0
-    T = size(X, 1)
-    d = size(X, 2)
-    A_full = zeros(d, d*L)
-    A = Matrix{Float64}(undef, d, d)
-    Z = hcat(ones(T), X)
-    β = zeros(d * L + 1, d)
-    for b in 1:B
-        β[:,:] .= 0.0
-        lags = rand(1:L)
-        ico = min(T - lags + 1, T-1)
-        t_bootstrap = (lags+1):T
-        Y_b = X[t_bootstrap,:]
-        X_past_b = X_past_constructor(X, t_bootstrap, lags)[:,1:(ico)]
-        β[1:ico,:] = X_past_b \ Y_b
-        A_full .+= abs.(β[2:end,:]')
-    end
-    A .= slarac_aggregator!(A, A_full ./ B, L, d)
-    return A'
-end
-
 function perform_slarac(X::Matrix, L::Integer, B::Integer)
     @assert L > 0
     @assert B > 0
@@ -105,5 +76,6 @@ function perform_slarac(X::Matrix, L::Integer, B::Integer)
     return (A', A_full)
 end
 
+X = [-1.39294  -0.629396; 1.14853 0.0176775; -1.5745 -0.082081; -1.01497  -0.288307]
 b = perform_slarac(X, 3, 2000);
 display(b[1])
