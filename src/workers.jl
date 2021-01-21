@@ -16,6 +16,7 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
     filtered_cov = zeros(length(m0), length(m0), T)
     l_like_est = 0.0
     offness = 0.0
+    H = Matrix(Hermitian(H))
     for t = 1:T
         m = A * m
         P = A * P * transpose(A) + Q
@@ -27,7 +28,7 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
         l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
         # unstable, need to implement in sqrt form
         m = m + K * v
-        P = (I(_xd) - K * H) * P * (I(_xd) - K * H)' + K*R*K'
+        P = (I(_xd) - K * H) * P * (I(_xd) - K * H)' + K * R * K'
         filtered_state[:, t] = copy(m)
         filtered_cov[:, :, t] = copy(P)
     end
@@ -66,27 +67,35 @@ end
 function Q_func(observations, A′, H, m0, P0, Q, R, _lp)
     kal = perform_kalman(observations, A′, H, m0, P0, Q, R)
     rts = perform_rts(kal, A′, H, Q, R)
-    Σ = zeros(size(P0))
-    Φ = zeros(size(P0))
-    C = zeros(size(m0 * m0'))
-    K = size(observations, 2)
-
     rts_means = rts[1]
     rts_covs = rts[2]
     rts_G = rts[3]
 
+    Σ = zeros(size(P0))
+    Φ = zeros(size(P0))
+    B = zeros(size(observations[:, 1] * rts_means[:, 1]'))
+    C = zeros(size(m0 * m0'))
+    D = zeros(size(observations[:, 1] * observations[:, 1]'))
+
+    K = size(observations, 2)
+
     for k = 2:K
+        B += observations[:, k] * rts_means[:, k]'
         Σ += rts_covs[:, :, k] + (rts_means[:, k] * rts_means[:, k]')
         Φ += rts_covs[:, :, k-1] + (rts_means[:, k-1] * rts_means[:, k-1]')
         C += (rts_covs[:, :, k] * rts_G[:, :, k-1]') + (rts_means[:, k] * rts_means[:, k-1]')
+        D += observations[:, k] * observations[:, k]'
     end
+    B ./= K
     Σ ./= K
     Φ ./= K
     C ./= K
+    D ./= K
+
     _f1(A) = (K / 2.0) * tr(inv(Q) * (Σ - C * A' - A * C' + A * Φ * A'))
     _f2(A) = _lp(A)
     Qf(A) = _f1(A) + _f2(A)
-    val_dict = @dict Σ Φ C
+    val_dict = @dict Σ Φ C B D
     return (Qf, _f1, _f2, val_dict)
 end
 
@@ -147,14 +156,25 @@ end
 function generate_lagged_obs(Y::Vector{Float64}, lag::Integer; lagmin::Integer = 0)
     num_obs = length(Y)
     num_gen_obs = num_obs - lag
-    generated_obs = Matrix{Float64}(undef, lag+1-lagmin, num_gen_obs)
-    for i in 1:num_gen_obs
+    generated_obs = Matrix{Float64}(undef, lag + 1 - lagmin, num_gen_obs)
+    for i = 1:num_gen_obs
         generated_obs[:, i] = Y[(i):(i+lag-lagmin)]
     end
     return generated_obs
 end
 
-function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, observations; steps::Integer = 1000, A0 = 1. * Matrix(I(size(P, 1))))
+function kalmanesq_MMH_A(
+    U::AbstractMatrix,
+    V::AbstractMatrix,
+    P,
+    Q,
+    R,
+    H,
+    m0,
+    observations;
+    steps::Integer = 1000,
+    A0 = 1.0 * Matrix(I(size(P, 1))),
+)
     # flat prior, eliminates p(A) term
     # symmetric walk, eliminates q term
     # propose based on LR only
@@ -165,8 +185,8 @@ function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, o
     pert_dist = MatrixNormal(M, U, V)
     l_pya = perform_kalman(observations, A, H, m0, P, Q, R)[3]
     l_pyap = copy(l_pya)
-    l_accrat = 0.
-    for n in 1:steps
+    l_accrat = 0.0
+    for n = 1:steps
         A′ = A .+ rand(pert_dist)
         l_pyap = perform_kalman(observations, A′, H, m0, P, Q, R)[3]
         l_accrat = l_pyap - l_pya
@@ -180,10 +200,56 @@ function kalmanesq_MMH_A(U::AbstractMatrix, V::AbstractMatrix, P, Q, R, H, m0, o
     return out_A
 end
 
+function perf_em(dimA, steps, Y, H, m0, P, Q, R)
+    A_gem = rand(dimA, dimA)
+    a_size = size(A_gem)
+    a_nelem = prod(a_size)
+    A_gem_vec = reshape(A_gem, a_nelem)
+    for s = 1:em_steps
+        Qf = Q_func(Y, A_gem, H, m0, P, Q, R, l1_penalty)[1]
+        Q_optim(A) = Qf(reshape(A, a_size))
+        optimres = optimize(Q_optim, A_gem_vec, NelderMead())
+        A_gem_vec = optimres.minimizer
+        A_gem = reshape(A_gem_vec, a_size)
+    end
+    return A_gem
+end
 
+function oneshot_H(val_dict)
+    B = val_dict[:B]
+    Σ = val_dict[:Σ]
+    H_map = Σ \ B
+    return H_map
+end
 
+function oneshot_Q(val_dict, A)
+    Σ = val_dict[:Σ]
+    C = val_dict[:C]
+    Φ = val_dict[:Φ]
+    Q_map = Σ - C * A' - A * C' + A * Φ * A'
+    return Q_map
+end
 
+function oneshot_R(val_dict, H)
+    Σ = val_dict[:Σ]
+    D = val_dict[:D]
+    B = val_dict[:B]
+    R_map = D - H * B' - B * H' + H * Σ * H
+    return R_map
+end
 
+function em_dr(dimA, steps, Y, H, m0, P, Q, R, γ)
+    A_gem = rand(dimA, dimA)
+    θ = 1.0
+    T = size(Y, 2)
+    osh = zeros(size(H))
+    for s = 1:steps
+        Qf = Q_func(Y, A_gem, H, m0, P, Q, R, l1_penalty)
+        A_gem = DR_opt(Qf[2], Qf[3], _proxf1, _proxf2, θ, T, Q, Qf[4], A_gem, 1e-3, γ)
+        osh .= oneshot_H(Qf[4])
+    end
+    return (A_gem, osh)
+end
 
 # A = [1. 1.; 0. 1.]
 # H = [1. 0.; 0. 1.]
@@ -221,14 +287,14 @@ function Z_constructor(X, L)
     Z_rows = T - L
     Z_cols = 1 + (d * L)
     Z = Matrix{Float64}(undef, Z_rows, Z_cols)
-    Z[:,1] .= 1.0
-    for k in 0:(L-1)
-        start_idx = k*d+1
-        fin_idx = (k+1)*d+1
-        x_rsind = L-k
+    Z[:, 1] .= 1.0
+    for k = 0:(L-1)
+        start_idx = k * d + 1
+        fin_idx = (k + 1) * d + 1
+        x_rsind = L - k
         x_reind = x_rsind + T - L - 1
-        xoint = X[x_rsind:x_reind,:]
-        Z[:,(1+start_idx):fin_idx] .= xoint
+        xoint = X[x_rsind:x_reind, :]
+        Z[:, (1+start_idx):fin_idx] .= xoint
     end
     return Z
 end
@@ -236,7 +302,7 @@ end
 function slarac_aggregator!(A, A_full, L, d)
     ij = 1:d
     for j in ij, i in ij
-        A[i,j] = maximum(A_full[i, j .+ (0:(L-1)).*d])
+        A[i, j] = maximum(A_full[i, j.+(0:(L-1)).*d])
     end
     return A
 end
@@ -246,18 +312,18 @@ function perform_slarac(X::Matrix, L::Integer, B::Integer)
     @assert B > 0
     T = size(X, 1)
     d = size(X, 2)
-    A_full = zeros(d, d*L)
+    A_full = zeros(d, d * L)
     A = Matrix{Float64}(undef, d, d)
     β = zeros(d * L + 1, d)
     INV_GR = 2.0 / (1.0 + sqrt(5.0))
     subsample_sizes = [1.0, 2.0, 3.0, 6.0]
     subsample_sizes .= T .* INV_GR .^ inv.(subsample_sizes)
     subsample_sizes_absol = round.(Int64, sample(subsample_sizes, B, replace = true))
-    Y_t = X[(L+1):end,:]
+    Y_t = X[(L+1):end, :]
     Z_t = Z_constructor(X, L)
     # @info(Z_t)
-    for b in 1:B
-        β[:,:] .= 0.0
+    for b = 1:B
+        β[:, :] .= 0.0
         lags = rand(1:L)
         # lags = L
         eff_lags = lags * d + 1
@@ -266,12 +332,12 @@ function perform_slarac(X::Matrix, L::Integer, B::Integer)
         # t_bootstrap = 1:ps_boot
         # t_bootstrap = sample((lags+1):T, 100, replace = true)
         ico = (rand(1:lags) * d + 1)
-        Y_b = Y_t[t_bootstrap,:]
-        Z_b = Z_t[t_bootstrap,:]
+        Y_b = Y_t[t_bootstrap, :]
+        Z_b = Z_t[t_bootstrap, :]
         beta = svd(Z_b) \ Y_b
-        β[1:size(beta,1),:] .= beta
+        β[1:size(beta, 1), :] .= beta
         # @info(size(beta))
-        A_full .+= abs.(β[2:end,:]')
+        A_full .+= abs.(β[2:end, :]')
     end
     A .= slarac_aggregator!(A, A_full ./ B, L, d)
     return (A', A_full)

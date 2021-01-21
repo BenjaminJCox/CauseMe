@@ -10,13 +10,14 @@ plotlyjs()
 
 include(srcdir("workers.jl"))
 
-Random.seed!(0x296c1bfc)
+# certified random number
+Random.seed!(0x8d8e1b4c2169a717f8c9fe4ccd6d5f9f)
 
-γ = 0.5
+γ = 0.15
 l1_penalty(A) = γ * norm(A, 1)
 
 
-A = [0.5 -0.5; 0.0 1.0]
+A = [0.5 0.0; 0.1 1.0]
 H = [1. 0.; 0. 1.]
 P = [1. 0.; 0. 1.]
 Q = [0.1 0.0; 0.0 0.1]
@@ -77,3 +78,6 @@ for i in 1:graphem_runs_full
 end
 A_graphem_dr = mean(genem_samples, dims = 3)[:, :, 1]
 display(A_graphem_dr)
+
+slarac_score = perform_slarac(Matrix(Y'), 1, 10000)
+display(slarac_score[1])

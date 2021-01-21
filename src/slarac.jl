@@ -77,5 +77,5 @@ function perform_slarac(X::Matrix, L::Integer, B::Integer)
 end
 
 X = [-1.39294  -0.629396; 1.14853 0.0176775; -1.5745 -0.082081; -1.01497  -0.288307]
-b = perform_slarac(X, 3, 2000);
+b = perform_slarac(X, 2, 200);
 display(b[1])
