@@ -14,7 +14,7 @@ include(srcdir("workers.jl"))
 # certified random number
 Random.seed!(0x8d8e1b4c2169a717f8c9fe4ccd6d5f9f)
 
-γ = 0.15
+γ = 0.35
 l1_penalty(A) = γ * norm(A, 1)
 
 em_steps = 50
@@ -47,11 +47,11 @@ function em_dr(dimA, steps, Y, H, m0, P, Q, R, γ)
     T = size(Y,2)
     osh = copy(H)
     osr = copy(R)
-    osq = copy(P)
+    osq = copy(Q)
     for s in 1:steps
-        Qf = Q_func(Y, A_gem, H, m0, P, Q, R, l1_penalty)
-        A_gem = DR_opt(Qf[2], Qf[3], _proxf1, _proxf2, θ, T, Q, Qf[4], A_gem, 1e-3, γ)
-        osh .= oneshot_H(Qf[4])
+        Qf = Q_func(Y, A_gem, osh, m0, P, osq, osr, l1_penalty)
+        A_gem = DR_opt(Qf[2], Qf[3], _proxf1, _proxf2, θ, T, osq, Qf[4], A_gem, 1e-3, γ)
+        # osh .= oneshot_H(Qf[4])
         osr .= oneshot_R(Qf[4], osh)
         osq .= oneshot_Q(Qf[4], A_gem)
     end
@@ -69,7 +69,7 @@ sta_var = 0.10^2
 P_full = sta_var .* Matrix(I(n_series))
 Q_full = sta_var .* Matrix(I(n_series))
 
-obs_var = 0.05^2
+obs_var = 0.10^2
 R_full = obs_var .* Matrix(I(n_series))
 
 H_full = 1. .* Matrix(I(n_series))

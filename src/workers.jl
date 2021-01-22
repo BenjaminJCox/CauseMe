@@ -25,7 +25,7 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
         offness += norm(S - Matrix(Hermitian(S)), 1)
         S = Matrix(Hermitian(S))
         K = (P * transpose(H)) * inv(S)
-        l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
+        # l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
         # unstable, need to implement in sqrt form
         m = m + K * v
         P = (I(_xd) - K * H) * P * (I(_xd) - K * H)' + K * R * K'
@@ -218,7 +218,7 @@ end
 function oneshot_H(val_dict)
     B = val_dict[:B]
     Σ = val_dict[:Σ]
-    H_map = Σ \ B
+    H_map = B / Σ
     return H_map
 end
 
@@ -234,7 +234,7 @@ function oneshot_R(val_dict, H)
     Σ = val_dict[:Σ]
     D = val_dict[:D]
     B = val_dict[:B]
-    R_map = D - H * B' - B * H' + H * Σ * H
+    R_map = D - H * B' - B * H' + H * Σ * H'
     return R_map
 end
 
