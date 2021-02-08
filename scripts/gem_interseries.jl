@@ -14,7 +14,7 @@ include(srcdir("workers.jl"))
 # certified random number
 Random.seed!(0x8d8e1b4c2169a717f8c9fe4ccd6d5f9f)
 
-γ = 0.35
+γ = exp(-0.5)
 l1_penalty(A) = γ * norm(A, 1)
 
 em_steps = 50

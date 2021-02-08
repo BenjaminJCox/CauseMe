@@ -9,14 +9,13 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
     P = copy(P0)
     v = observations[:, 1] - H * m
     S = H * P * H' + R
-    K = P * H' \ S
+    K = P * H' / S
     T = size(observations, 2)
     _xd = length(m0)
     filtered_state = zeros(length(m0), T)
     filtered_cov = zeros(length(m0), length(m0), T)
     l_like_est = 0.0
     offness = 0.0
-    H = Matrix(Hermitian(H))
     for t = 1:T
         m = A * m
         P = A * P * transpose(A) + Q
@@ -25,7 +24,7 @@ function perform_kalman(observations, A, H, m0, P0, Q, R)
         offness += norm(S - Matrix(Hermitian(S)), 1)
         S = Matrix(Hermitian(S))
         K = (P * transpose(H)) * inv(S)
-        # l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
+        l_like_est += logpdf(MvNormal(H * m, S), observations[:, t])
         # unstable, need to implement in sqrt form
         m = m + K * v
         P = (I(_xd) - K * H) * P * (I(_xd) - K * H)' + K * R * K'
