@@ -2,6 +2,7 @@ using DrWatson
 using Distributions
 using Random
 using Turing: filldist
+using MLBase
 
 function kalman_sample_sparse(
     P,
@@ -114,4 +115,30 @@ function kalman_sample_sparse(
         A_samples[:, :, n] .= A
     end
     return A_samples
+end
+
+function prec_rec_serjmcmc(true_A, sp_A; threshold::Float64 = 0.40)
+    # @assert 0.0 .<= sp_A .<= 1.0
+    true_sparse = (true_A .== 0.0)
+    est_sparse = (sp_A .>= threshold)
+    ts_vec = vec(true_sparse)
+    es_vec = vec(est_sparse)
+    eroc = roc(ts_vec, es_vec)
+    prec = precision(eroc)
+    rec =  recall(eroc)
+    f1 = f1score(eroc)
+    return @dict prec rec f1
+end
+
+function prec_rec_graphem(true_A, gem_A)
+    # @assert 0.0 .<= sp_A .<= 1.0
+    true_sparse = (true_A .== 0.0)
+    est_sparse = (abs.(gem_A) .== 0.0)
+    ts_vec = vec(true_sparse)
+    es_vec = vec(est_sparse)
+    eroc = roc(ts_vec, es_vec)
+    prec = precision(eroc)
+    rec =  recall(eroc)
+    f1 = f1score(eroc)
+    return @dict prec rec f1
 end
