@@ -214,6 +214,13 @@ function perf_em(dimA, steps, Y, H, m0, P, Q, R)
     return A_gem
 end
 
+function oneshot_A(val_dict)
+    C = val_dict[:C]
+    Φ = val_dict[:Φ]
+    A_map = C / Φ
+    return A_map
+end
+
 function oneshot_H(val_dict)
     B = val_dict[:B]
     Σ = val_dict[:Σ]
@@ -249,6 +256,7 @@ function em_dr(dimA, steps, Y, H, m0, P, Q, R, γ)
     end
     return (A_gem, osh)
 end
+
 
 # A = [1. 1.; 0. 1.]
 # H = [1. 0.; 0. 1.]

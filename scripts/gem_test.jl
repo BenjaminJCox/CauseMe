@@ -10,21 +10,23 @@ using Turing: filldist
 gr()
 
 include(srcdir("workers.jl"))
+include(srcdir("greenforsparse.jl"))
 
 # certified random number
-Random.seed!(0x8d8e1b4c2169a717f8c9fe4ccd6d5f9f)
+Random.seed!(0x8d8e1b4c2169a717f8c9fcf)
 
 γ = 0.9
 l1_penalty(A) = γ * norm(A, 1)
 
 
-A = [0.5 0.5 0.0; 0.0 0.5 0.5; 0.1 0.0 0.1]
+# A = [0.8 0.2 0.0; 0.0 0.7 0.3; 0.1 0.0 0.9]
+A = [0.8 0.0 0.0; 0.0 0.7 0.0; 0.0 0.0 0.9]
 Q = Matrix(1.0 .* I(3))
 H = P = R = Q
 
 m0 = ones(3)
 
-T = 50
+T = 100
 
 X = zeros(3, T)
 Y = zeros(3, T)
@@ -79,10 +81,11 @@ end
 A_graphem_dr = mean(genem_samples, dims = 3)[:, :, 1]
 display(A_graphem_dr)
 
-slarac_score = perform_slarac(Matrix(Y'), 1, 10000)
+slarac_score = perform_slarac(Matrix(Y'), 1, 10_000)
 # display(slarac_score[1])
 
-function kalmanesq_MMH_A_sparse(P,
+function kalmanesq_MMH_A_sparse(
+    P,
     Q,
     R,
     H,
@@ -94,12 +97,13 @@ function kalmanesq_MMH_A_sparse(P,
 )
 
     out_A = 0.0 .* A0
-    N = size(A0,1)
+    N = size(A0, 1)
     A = copy(A0)
     A′ = copy(A)
     M = zeros(size(A))
-    pert_dist = filldist(Laplace(0,0.1), N, N)
-    penalty(a) = exp(1) .* norm(a,1)
+
+    pert_dist = filldist(Laplace(0, 0.1), N, N)
+    penalty(a) = exp(1) .* norm(a, 1)
 
     n_step = steps - burnin
 
@@ -128,20 +132,45 @@ end
 genA_mmh = kalmanesq_MMH_A_sparse(P, Q, R, H, m0, Y; steps = 10_000)
 display(genA_mmh)
 
+pot_sparse = findall(abs.(genA_mmh) .< 0.3)
+@info(pot_sparse)
+stp = 15_000
+gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp)
+
+burnin = 5_000
+n_s = stp - burnin + 1
+
+gfs_mean = mean(gf_sparse[:, :, 5_000:end], dims = 3)[:, :, 1]
+num_sparse = sum(gf_sparse[:, :, 5_000:end] .== 0.0, dims = 3)[:, :, 1] ./ n_s
+display(gfs_mean)
+display(num_sparse)
+
 genfil_gem = perform_kalman(Y, A_graphem_dr, H, m0, P, Q, R)
 genfil_mmh = perform_kalman(Y, genA_mmh, H, m0, P, Q, R)
+genfil_spmmh = perform_kalman(Y, gfs_mean, H, m0, P, Q, R)
 opt_fil = perform_kalman(Y, A, H, m0, P, Q, R)
 
-voi = 1
-plot_series_gem = genfil_gem[1][voi, :]
-plot_series_mmh = genfil_mmh[1][voi, :]
-plot_series_opt = opt_fil[1][voi, :]
-plot_obs = X[voi,:]
+vois = 1:3
+plot_arr = Array{Any, 1}(undef, length(vois))
+for voi in vois
+    plot_series_gem = genfil_gem[1][voi, :]
+    plot_series_mmh = genfil_mmh[1][voi, :]
+    plot_series_spmmh = genfil_spmmh[1][voi, :]
+    plot_series_opt = opt_fil[1][voi, :]
+    plot_obs = X[voi, :]
+
+    p1 = plot(plot_obs, label = "Truth")
+    plot!(plot_series_gem, label = "GEM Filter")
+    # plot!(plot_series_mmh, label = "MMH Filter")
+    plot!(plot_series_spmmh, label = "SeMMH Filter")
+    plot!(plot_series_opt, label = "Optimal Filter")
+    plot_arr[voi] = p1
+end
 
 
-p1 = plot(plot_series_gem, label = "GEM Causal Filter")
-plot!(plot_obs, label = "Truth")
-plot!(plot_series_mmh, label = "GEMMMH Causal Filter")
-plot!(plot_series_opt, label = "Optimal Filter")
+norm(A - A_graphem_dr, 2)
+norm(A - genA_mmh, 2)
+norm(A - gfs_mean, 2)
 
-plot(p1, legend = :outerright, size = (1000, 750))
+plot(plot_arr..., legend = :outerright, size = (1000, 750), layout = (3, 1))
+# latexify(gfs_mean, fmt = "%.4f")
