@@ -18,6 +18,8 @@ function kalman_sample_sparse(
     penalty::Function = x -> exp(2) .* norm(x, 1),
     no_change_prob::Float64 = 0.9,
     sparser_prob::Float64 = 0.8,
+    corrections::Bool = true,
+    subcorrections::Bool = true,
 )
     @assert 0 < no_change_prob < 1
     @assert 0 < sparser_prob < 1
@@ -62,28 +64,28 @@ function kalman_sample_sparse(
             l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
             l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A)
         else
-            # must look over all corections, when these are allowed things get weird
+            # must look over all corrections, when these are allowed things get weird
             if (can_sparser && can_denser)
                 doing_sparser = (rand() < sparser_prob)
                 if doing_sparser
-                    correction = pi_p + log(n_dense) - log(n_sparse+1)
+                    correction = corrections * pi_p + subcorrections * (log(n_dense) - log(n_sparse + 1))
                 else
-                    correction = -pi_p + log(n_sparse) - log(n_dense+1)
+                    correction = corrections * -pi_p + subcorrections * (log(n_sparse) - log(n_dense + 1))
                 end
                 # if stepping to sparsest
                 if doing_sparser && (n_sparse == max_sparse_n - 1)
-                    correction = -log(sparser_prob) - log(max_sparse_n)
-                # if stepping to densest
-            elseif !doing_sparser && (n_sparse == 1)
-                    correction = -log(1.0 - sparser_prob) - log(max_sparse_n)
+                    correction = corrections * -log(sparser_prob) - subcorrections * log(max_sparse_n)
+                    # if stepping to densest
+                elseif !doing_sparser && (n_sparse == 1)
+                    correction = corrections * -log(1.0 - sparser_prob) - subcorrections * log(max_sparse_n)
                 end
-            # if stepping from densest
+                # if stepping from densest
             elseif can_sparser
-                correction = log(1.0 - sparser_prob) + log(max_sparse_n)
+                correction = corrections * log(1.0 - sparser_prob) + subcorrections * log(max_sparse_n)
                 doing_sparser = true
-            # if stepping from sparsest
+                # if stepping from sparsest
             elseif can_denser
-                correction = log(sparser_prob) + log(max_sparse_n)
+                correction = corrections * log(sparser_prob) + subcorrections * log(max_sparse_n)
                 doing_sparser = false
             else
                 @info("This is really bad")
@@ -100,7 +102,11 @@ function kalman_sample_sparse(
                 Ap[sparse_inds[make_sparse_ind]] = 0.0
                 currently_sparse_op[make_sparse_ind] = true
                 l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
-                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction + logpdf(symwald, A[sparse_inds[make_sparse_ind]])
+                l_accrat =
+                    l_pyap - l_pya - penalty(Ap) +
+                    penalty(A) +
+                    correction +
+                    logpdf(symwald, A[sparse_inds[make_sparse_ind]])
             else
                 # get denser, draw higher terms from walk (about zero)
                 if (length(sparse_ind_inds[currently_sparse]) == 1)
@@ -113,7 +119,9 @@ function kalman_sample_sparse(
                 # Ap[sparse_inds[make_dense_ind]] = A_unzero[sparse_inds[make_dense_ind]] + tper
                 currently_sparse_op[make_dense_ind] = false
                 l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
-                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction - logpdf(symwald, tper)
+                l_accrat =
+                    l_pyap - l_pya - penalty(Ap) + penalty(A) + correction -
+                    logpdf(symwald, tper)
             end
         end
         l_rand = log(rand())
@@ -135,7 +143,7 @@ function prec_rec_serjmcmc(true_A, sp_A; threshold::Float64 = 0.40)
     es_vec = vec(est_sparse)
     eroc = roc(ts_vec, es_vec)
     prec = precision(eroc)
-    rec =  recall(eroc)
+    rec = recall(eroc)
     f1 = f1score(eroc)
     return @dict prec rec f1
 end
@@ -147,7 +155,7 @@ function prec_rec_graphem(true_A, gem_A)
     es_vec = vec(est_sparse)
     eroc = roc(ts_vec, es_vec)
     prec = precision(eroc)
-    rec =  recall(eroc)
+    rec = recall(eroc)
     f1 = f1score(eroc)
     return @dict prec rec f1
 end

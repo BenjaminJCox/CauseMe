@@ -137,7 +137,7 @@ display(genA_mmh)
 pot_sparse = findall(abs.(genA_mmh) .< 0.3)
 @info(pot_sparse)
 stp = 25_000
-gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.7, sparser_prob = 0.8, penalty = x -> exp(2) .* norm(x, 1))
+gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.7, sparser_prob = 0.6, penalty = x -> exp(2) .* norm(x, 1), subcorrections = false)
 
 burnin = 15_000
 n_s = stp - burnin + 1
