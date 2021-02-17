@@ -106,8 +106,8 @@ function isotropic_proxf1(A, θ, K, Q, val_dict)
     id = 1.0 .* Matrix(I(size(Q, 1)))
     tKs = θ .* K ./ σ
     _t1 = tKs .* C + A
-    _t2 = inv(tKs .* Φ + id)
-    return _t1 * _t2
+    _t2 = tKs .* Φ + id
+    return _t1 / _t2
 end
 
 function _proxf1(A, θ, K, Q, val_dict)

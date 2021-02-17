@@ -19,11 +19,12 @@ Random.seed!(0x8d8e1b4c2169a717f8c9fcf)
 l1_penalty(A) = γ * norm(A, 1)
 
 
-A = [0.8 0.2 0.0; 0.0 0.7 0.3; 0.1 0.0 0.9]
-# A = [0.8 0.0 0.0; 0.0 0.7 0.0; 0.0 0.0 0.9]
+# A = [0.8 0.2 0.0; 0.0 0.7 0.3; 0.1 0.0 0.9]
+A = [0.8 0.0 0.0; 0.0 0.7 0.0; 0.0 0.0 0.9]
 # A = [0.4 0.2 0.4; 0.3 0.4 0.3; 0.1 0.3 0.6]
-Q = Matrix(1.0 .* I(3))
-H = P = R = Q
+Q = Matrix(1 .* I(3))
+R = Matrix(1 .* I(3))
+H = P =  Matrix(1.0 .* I(3))
 
 m0 = ones(3)
 
@@ -135,10 +136,10 @@ display(genA_mmh)
 
 pot_sparse = findall(abs.(genA_mmh) .< 0.3)
 @info(pot_sparse)
-stp = 10_000
-gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.9, sparser_prob = 0.8)
+stp = 25_000
+gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.7, sparser_prob = 0.8, penalty = x -> exp(2) .* norm(x, 1))
 
-burnin = 5_000
+burnin = 15_000
 n_s = stp - burnin + 1
 
 gfs_mean = mean(gf_sparse[:, :, burnin:end], dims = 3)[:, :, 1]
@@ -220,4 +221,9 @@ end
 # tested_threaded = T_test(tvec, A, P, Q, R, H, m0, Y)
 # tested_threaded[:plt]
 
+norm(gfs_mean, 1) * exp(2)
+genfil_spmmh[3]
+
+@info prec_rec_serjmcmc(A, num_sparse, threshold = 0.3)
+@info prec_rec_graphem(A, A_graphem_dr)
 plot(plot_arr..., legend = :outerright, size = (1000, 750), layout = (3, 1))

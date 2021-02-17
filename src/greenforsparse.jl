@@ -43,13 +43,17 @@ function kalman_sample_sparse(
 
     A = copy(A0)
     A_unzero = copy(A0)
+    pi_p = log(1.0 - sparser_prob) - log(sparser_prob)
     for n = 1:steps
         # change sparseness?
+        correction = 0.0
         Ap = copy(A)
         currently_sparse_op = copy(currently_sparse)
         correction = 0.0
-        can_sparser = sum(currently_sparse) < max_sparse_n
-        can_denser = sum(currently_sparse) > 0
+        n_sparse = sum(currently_sparse)
+        n_dense = max_sparse_n - n_sparse
+        can_sparser = n_sparse < max_sparse_n
+        can_denser = n_sparse > 0
         if (rand() < no_change_prob)
             # no change sparseness, draw from walk
             change_indices = Not(sparse_inds[currently_sparse])
@@ -58,22 +62,28 @@ function kalman_sample_sparse(
             l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
             l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A)
         else
+            # must look over all corections, when these are allowed things get weird
             if (can_sparser && can_denser)
                 doing_sparser = (rand() < sparser_prob)
+                if doing_sparser
+                    correction = pi_p + log(n_dense) - log(n_sparse+1)
+                else
+                    correction = -pi_p + log(n_sparse) - log(n_dense+1)
+                end
                 # if stepping to sparsest
-                if doing_sparser && (sum(currently_sparse) == max_sparse_n - 1)
-                    correction = -log(sparser_prob)
+                if doing_sparser && (n_sparse == max_sparse_n - 1)
+                    correction = -log(sparser_prob) - log(max_sparse_n)
                 # if stepping to densest
-                elseif !doing_sparser && (sum(currently_sparse) == 1)
-                    correction = -log(1.0 - sparser_prob)
+            elseif !doing_sparser && (n_sparse == 1)
+                    correction = -log(1.0 - sparser_prob) - log(max_sparse_n)
                 end
             # if stepping from densest
             elseif can_sparser
-                correction = log(1.0 - sparser_prob)
+                correction = log(1.0 - sparser_prob) + log(max_sparse_n)
                 doing_sparser = true
             # if stepping from sparsest
             elseif can_denser
-                correction = log(sparser_prob)
+                correction = log(sparser_prob) + log(max_sparse_n)
                 doing_sparser = false
             else
                 @info("This is really bad")
@@ -90,7 +100,7 @@ function kalman_sample_sparse(
                 Ap[sparse_inds[make_sparse_ind]] = 0.0
                 currently_sparse_op[make_sparse_ind] = true
                 l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
-                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction
+                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction + logpdf(symwald, A[sparse_inds[make_sparse_ind]])
             else
                 # get denser, draw higher terms from walk (about zero)
                 if (length(sparse_ind_inds[currently_sparse]) == 1)
@@ -103,7 +113,7 @@ function kalman_sample_sparse(
                 # Ap[sparse_inds[make_dense_ind]] = A_unzero[sparse_inds[make_dense_ind]] + tper
                 currently_sparse_op[make_dense_ind] = false
                 l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
-                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction
+                l_accrat = l_pyap - l_pya - penalty(Ap) + penalty(A) + correction - logpdf(symwald, tper)
             end
         end
         l_rand = log(rand())
@@ -131,7 +141,6 @@ function prec_rec_serjmcmc(true_A, sp_A; threshold::Float64 = 0.40)
 end
 
 function prec_rec_graphem(true_A, gem_A)
-    # @assert 0.0 .<= sp_A .<= 1.0
     true_sparse = (true_A .== 0.0)
     est_sparse = (abs.(gem_A) .== 0.0)
     ts_vec = vec(true_sparse)

@@ -122,6 +122,12 @@ git-tree-sha1 = "8cc2a5f880e832ef5b0d222673a7fdd082f9c2fc"
 uuid = "ad839575-38b3-5650-b840-f874b8c74a25"
 version = "0.12.4"
 
+[[BlockDiagonals]]
+deps = ["ChainRulesCore", "FillArrays", "LinearAlgebra"]
+git-tree-sha1 = "109b86b95295ca54588fdeb82b599ead2a3de258"
+uuid = "0a1fb500-61f7-11e9-3c65-f5ef3456f9f0"
+version = "0.1.14"
+
 [[Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "c3598e525718abcc440f69cc6d5f60dda0a1b61e"
