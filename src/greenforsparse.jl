@@ -105,8 +105,7 @@ function kalman_sample_sparse(
                 l_accrat =
                     l_pyap - l_pya - penalty(Ap) +
                     penalty(A) +
-                    correction +
-                    logpdf(symwald, A[sparse_inds[make_sparse_ind]])
+                    correction + logpdf(symwald, A[sparse_inds[make_sparse_ind]])
             else
                 # get denser, draw higher terms from walk (about zero)
                 if (length(sparse_ind_inds[currently_sparse]) == 1)
@@ -120,8 +119,7 @@ function kalman_sample_sparse(
                 currently_sparse_op[make_dense_ind] = false
                 l_pyap = perform_kalman(y, Ap, H, m0, P, Q, R)[3]
                 l_accrat =
-                    l_pyap - l_pya - penalty(Ap) + penalty(A) + correction -
-                    logpdf(symwald, tper)
+                    l_pyap - l_pya - penalty(Ap) + penalty(A) + correction - logpdf(symwald, tper)
             end
         end
         l_rand = log(rand())
@@ -145,7 +143,8 @@ function prec_rec_serjmcmc(true_A, sp_A; threshold::Float64 = 0.40)
     prec = precision(eroc)
     rec = recall(eroc)
     f1 = f1score(eroc)
-    return @dict prec rec f1
+    spec = true_negative_rate(eroc)
+    return @dict prec rec f1 spec
 end
 
 function prec_rec_graphem(true_A, gem_A)
@@ -157,5 +156,18 @@ function prec_rec_graphem(true_A, gem_A)
     prec = precision(eroc)
     rec = recall(eroc)
     f1 = f1score(eroc)
-    return @dict prec rec f1
+    spec = true_negative_rate(eroc)
+    return @dict prec rec f1 spec
+end
+
+function prf_comp(truth, A, B)
+    rocA = roc(truth, A)
+    rocB = roc(truth, B)
+    precA = precision(rocA)
+    recA = recall(rocA)
+    f1A = f1score(rocA)
+    precB = precision(rocB)
+    recB = recall(rocB)
+    f1B = f1score(rocB)
+    return @dict precA precB recA recB f1A f1B
 end

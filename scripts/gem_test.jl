@@ -20,11 +20,13 @@ l1_penalty(A) = γ * norm(A, 1)
 
 
 # A = [0.8 0.2 0.0; 0.0 0.7 0.3; 0.1 0.0 0.9]
-A = [0.8 0.0 0.0; 0.0 0.7 0.0; 0.0 0.0 0.9]
-# A = [0.4 0.2 0.4; 0.3 0.4 0.3; 0.1 0.3 0.6]
+# A = [0.8 0.0 0.0; 0.0 0.7 0.0; 0.0 0.0 0.9]
+A = [0.4 0.2 0.4; 0.3 0.4 0.3; 0.1 0.3 0.6]
+
 Q = Matrix(1 .* I(3))
 R = Matrix(1 .* I(3))
-H = P =  Matrix(1.0 .* I(3))
+P = Matrix(1.0 .* I(3))
+H = Matrix(1.0 .* I(3))
 
 m0 = ones(3)
 
@@ -77,13 +79,26 @@ end
 
 graphem_runs_full = 25
 genem_samples = zeros(3, 3, graphem_runs_full)
+gem_stat = Dict(:f1 => 0.0, :spec => 0.0, :prec => 0.0, :rec => 0.0)
+
 for i = 1:graphem_runs_full
     genem_samples[:, :, i] .+= em_dr(3, dr_steps, Y, H, m0, P, Q, R, γ)
+    gem_rs =  prec_rec_graphem(A, genem_samples[:, :, i])
+    for st in keys(gem_rs)
+        gem_stat[st] += gem_rs[st]
+    end
 end
+
+for st in keys(gem_stat)
+    gem_stat[st] /= graphem_runs_full
+end
+
+# @info("Average GraphEM stats for", T, gem_stat)
+
 A_graphem_dr = mean(genem_samples, dims = 3)[:, :, 1]
 display(A_graphem_dr)
 
-slarac_score = perform_slarac(Matrix(Y'), 1, 10_000)
+# slarac_score = perform_slarac(Matrix(Y'), 1, 10_000)
 # display(slarac_score[1])
 
 function kalmanesq_MMH_A_sparse(
@@ -96,6 +111,7 @@ function kalmanesq_MMH_A_sparse(
     steps::Integer = 1000,
     A0 = 1.0 * Matrix(I(size(P, 1))),
     burnin::Integer = fld(steps, 2),
+    λ = exp(1),
 )
 
     out_A = 0.0 .* A0
@@ -105,7 +121,7 @@ function kalmanesq_MMH_A_sparse(
     M = zeros(size(A))
 
     pert_dist = filldist(Laplace(0, 0.1), N, N)
-    penalty(a) = exp(1) .* norm(a, 1)
+    penalty(a) = λ .* norm(a, 1)
 
     n_step = steps - burnin
 
@@ -131,21 +147,37 @@ function kalmanesq_MMH_A_sparse(
     return out_A
 end
 
-genA_mmh = kalmanesq_MMH_A_sparse(P, Q, R, H, m0, Y; steps = 10_000)
+genA_mmh = kalmanesq_MMH_A_sparse(P, Q, R, H, m0, Y; steps = 10_000, λ = exp(2))
 display(genA_mmh)
 
 pot_sparse = findall(abs.(genA_mmh) .< 0.3)
 @info(pot_sparse)
-stp = 25_000
-gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.7, sparser_prob = 0.6, penalty = x -> exp(2) .* norm(x, 1), subcorrections = false)
+stp = 15_000
 
-burnin = 15_000
+burnin = 5_000
 n_s = stp - burnin + 1
 
-gfs_mean = mean(gf_sparse[:, :, burnin:end], dims = 3)[:, :, 1]
-num_sparse = sum(gf_sparse[:, :, burnin:end] .== 0.0, dims = 3)[:, :, 1] ./ n_s
-display(gfs_mean)
-display(num_sparse)
+n_runs = 10
+ssmcmc_stat = Dict(:f1 => 0.0, :spec => 0.0, :prec => 0.0, :rec => 0.0)
+gfs_mean = genA_mmh
+
+for run in 1:n_runs
+    gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, Y, gfs_mean, pot_sparse, steps = stp, no_change_prob = 0.6, sparser_prob = 0.5, penalty = x -> 0.0 * exp(1.5) .* norm(x, 1))
+    global gfs_mean = mean(gf_sparse[:, :, burnin:end], dims = 3)[:, :, 1]
+    num_sparse = sum(gf_sparse[:, :, burnin:end] .== 0.0, dims = 3)[:, :, 1] ./ n_s
+    display(num_sparse)
+    ssmcmc_rs = prec_rec_serjmcmc(A, num_sparse, threshold = 0.3)
+    for st in keys(ssmcmc_rs)
+        ssmcmc_stat[st] += ssmcmc_rs[st]
+    end
+end
+
+for st in keys(gem_stat)
+    ssmcmc_stat[st] /= n_runs
+end
+
+# display(gfs_mean)
+# display(num_sparse)
 
 genfil_gem = perform_kalman(Y, A_graphem_dr, H, m0, P, Q, R)
 genfil_mmh = perform_kalman(Y, genA_mmh, H, m0, P, Q, R)
@@ -199,7 +231,7 @@ function T_test(T_vec, A, P, Q, R, H, m0, Y)
         genA_mmh = kalmanesq_MMH_A_sparse(P, Q, R, H, m0, y; steps = 10_000)
         pot_sparse = findall(abs.(genA_mmh) .< 0.3)
         stp = 20_000
-        gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.9, sparser_prob = 0.6)
+        gf_sparse = kalman_sample_sparse(P, Q, R, H, m0, y, genA_mmh, pot_sparse, steps = stp, no_change_prob = 0.5, sparser_prob = 0.6)
 
         burnin = 12_000
         n_s = stp - burnin + 1
@@ -227,3 +259,6 @@ genfil_spmmh[3]
 @info prec_rec_serjmcmc(A, num_sparse, threshold = 0.3)
 @info prec_rec_graphem(A, A_graphem_dr)
 plot(plot_arr..., legend = :outerright, size = (1000, 750), layout = (3, 1))
+
+@info("Average GraphEM stats for", T, gem_stat)
+@info("Average SSMCMC stats for", T, ssmcmc_stat)
